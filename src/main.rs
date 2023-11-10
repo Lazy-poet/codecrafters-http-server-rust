@@ -30,14 +30,19 @@ fn main() {
 fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
-
     let path = get_path(buffer);
-    let content_len = path.len();
-    let response = format!(
+    let body_res = path.replace("/echo/", "");
+    let content_len = body_res.len();
+    let ok_response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
-        content_len, path
+        content_len, body_res
     );
-    stream.write(response.as_bytes()).unwrap();
+    let err_response = "HTTP/1.1 404 NOT FOUND\r\n\r\nNOT FOUND";
+
+    match path.starts_with("/echo") {
+        true => stream.write(ok_response.as_bytes()).unwrap(),
+        false => stream.write(err_response.as_bytes()).unwrap(),
+    };
 
     stream.flush().unwrap();
 }
@@ -48,5 +53,5 @@ fn get_path(buffer: [u8; 1024]) -> String {
 
     let path = str_vec.first().unwrap().split_whitespace().nth(1).unwrap();
 
-    path.split("/").last().unwrap().to_string()
+    path.to_string()
 }
