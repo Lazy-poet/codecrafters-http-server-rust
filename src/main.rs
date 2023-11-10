@@ -31,12 +31,13 @@ fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
 
-    let ok_response = "HTTP/1.1 200 OK\r\n\r\nHELLO WORLD";
-    let err_response = "HTTP/1.1 404 NOT FOUND\r\n\r\nNOT FOUND";
-    match get_path(buffer).as_str() {
-        "/" => stream.write(ok_response.as_bytes()).unwrap(),
-        _ => stream.write(err_response.as_bytes()).unwrap(),
-    };
+    let path = get_path(buffer);
+    let content_len = path.len();
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length {}\r\n\r\n{}",
+        content_len, path
+    );
+    stream.write(response.as_bytes()).unwrap();
 
     stream.flush().unwrap();
 }
@@ -47,5 +48,5 @@ fn get_path(buffer: [u8; 1024]) -> String {
 
     let path = str_vec.first().unwrap().split_whitespace().nth(1).unwrap();
 
-    path.to_string()
+    path.split("/").last().unwrap().to_string()
 }
