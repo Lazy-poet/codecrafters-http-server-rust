@@ -31,6 +31,7 @@ fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
     let path = get_path(buffer);
+    println!("path is {}", path);
     let body_res = path.replace("/echo/", "");
     let content_len = body_res.len();
     let ok_response = format!(
@@ -39,9 +40,12 @@ fn handle_connection(mut stream: TcpStream) {
     );
     let err_response = "HTTP/1.1 404 NOT FOUND\r\n\r\nNOT FOUND";
 
-    match path.starts_with("/echo") {
-        true => stream.write(ok_response.as_bytes()).unwrap(),
-        false => stream.write(err_response.as_bytes()).unwrap(),
+    match path.as_str() {
+        "/" => stream.write(ok_response.as_bytes()).unwrap(),
+        others => match others.starts_with("/echo") {
+            true => stream.write(ok_response.as_bytes()).unwrap(),
+            false => stream.write(err_response.as_bytes()).unwrap(),
+        },
     };
 
     stream.flush().unwrap();
