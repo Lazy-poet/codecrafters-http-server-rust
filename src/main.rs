@@ -34,7 +34,7 @@ fn handle_connection(mut stream: TcpStream) {
     let path = get_path(buffer);
     let content_len = path.len();
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length {}\r\n\r\n{}",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
         content_len, path
     );
     stream.write(response.as_bytes()).unwrap();
