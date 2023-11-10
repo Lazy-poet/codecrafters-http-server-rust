@@ -30,8 +30,22 @@ fn main() {
 fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
     stream.read(&mut buffer).unwrap();
-    let content = "Hello World";
-    let response = format!("HTTP/1.1 200 OK\r\n\r\n{}", content);
-    stream.write(response.as_bytes()).unwrap();
+
+    let ok_response = "HTTP/1.1 200 OK\r\n\r\nHELLO WORLD";
+    let err_response = "HTTP/1.1 404 NOT FOUND\r\n\r\nNOT FOUND";
+    match get_path(buffer).as_str() {
+        "/" => stream.write(ok_response.as_bytes()).unwrap(),
+        _ => stream.write(err_response.as_bytes()).unwrap(),
+    };
+
     stream.flush().unwrap();
+}
+
+fn get_path(buffer: [u8; 1024]) -> String {
+    let buf_to_string = String::from_utf8_lossy(&buffer);
+    let str_vec: Vec<&str> = buf_to_string.split("\r\n").collect();
+
+    let path = str_vec.first().unwrap().split_whitespace().nth(1).unwrap();
+
+    path.to_string()
 }
