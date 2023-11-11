@@ -2,6 +2,7 @@
 use std::io::prelude::*;
 use std::net::TcpListener;
 use std::net::TcpStream;
+use std::thread;
 enum Route {
     BASE,
     ECHO,
@@ -119,8 +120,10 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                println!("accepted new connection");
-                handle_connection(stream)
+                thread::spawn(|| {
+                    println!("accepted new connection");
+                    handle_connection(stream);
+                });
             }
             Err(e) => {
                 println!("error: {}", e);
