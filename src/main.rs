@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::env::args;
 use std::fs;
 use std::io::prelude::*;
+use std::io::Write;
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::path::Path;
@@ -11,14 +12,17 @@ enum Route {
     BASE,
     ECHO,
     USERAGENT,
-    FILES,
+    GETFILE,
+    SAVEFILE,
     NOTFOUND,
 }
 
+#[derive(Debug)]
 struct Headers {
     method: String,
     path: String,
     user_agent: String,
+    body: String,
 }
 
 impl Headers {
@@ -27,6 +31,7 @@ impl Headers {
             method: String::new(),
             path: String::new(),
             user_agent: String::new(),
+            body: String::new(),
         }
     }
 
@@ -39,12 +44,16 @@ impl Headers {
     fn set_user_agent(&mut self, user_agent: String) {
         self.user_agent = user_agent;
     }
+    fn set_body(&mut self, body: String) {
+        self.body = body;
+    }
 }
 
 fn handle_connection(mut stream: TcpStream) {
-    let mut buffer = [0; 1024];
-    stream.read(&mut buffer).unwrap();
-    let headers = parse_headers(buffer);
+    let mut buffer = [0; 1024].to_vec();
+    let bytes_read = stream.read(&mut buffer).unwrap();
+    let buf_to_string = String::from_utf8_lossy(&buffer[..bytes_read]);
+    let headers = parse_headers(buf_to_string.into_owned());
     route_handler(headers, stream);
 }
 
@@ -66,9 +75,15 @@ fn route_handler(headers: Headers, mut stream: TcpStream) {
                     .write(get_content(Route::USERAGENT, &headers).as_bytes())
                     .unwrap();
             } else if route.starts_with("/files") {
-                stream
-                    .write(get_content(Route::FILES, &headers).as_bytes())
-                    .unwrap();
+                if headers.method == "GET" {
+                    stream
+                        .write(get_content(Route::GETFILE, &headers).as_bytes())
+                        .unwrap();
+                } else if headers.method == "POST" {
+                    stream
+                        .write(get_content(Route::SAVEFILE, &headers).as_bytes())
+                        .unwrap();
+                }
             } else {
                 stream
                     .write(get_content(Route::NOTFOUND, &headers).as_bytes())
@@ -79,7 +94,20 @@ fn route_handler(headers: Headers, mut stream: TcpStream) {
     stream.flush().unwrap();
 }
 
+fn save_file(path_str: String, content: String) -> Result<(), ()> {
+    let path = Path::new(&path_str);
+    if let Some(parent_dir) = path.parent() {
+        if !parent_dir.exists() {
+            fs::create_dir_all(parent_dir).expect("Failed to create directory");
+        }
+    }
+    let mut file = fs::File::create(path).expect("creation failed");
+    file.write_all(content.as_bytes()).expect("write failed");
+    Ok(())
+}
+
 fn get_content(route: Route, headers: &Headers) -> String {
+    let args = parse_args();
     match route {
         Route::BASE => "HTTP/1.1 200 OK\r\n\r\n".to_string(),
         Route::ECHO => {
@@ -98,8 +126,7 @@ fn get_content(route: Route, headers: &Headers) -> String {
                 content_len, body_res
             )
         }
-        Route::FILES => {
-            let args = parse_args();
+        Route::GETFILE => {
             let filename = headers.path.to_string().replace("/files/", "");
             if let Some(directory) = args.get("directory") {
                 if let Ok(content) = read_file_content(filename, directory.to_owned()) {
@@ -111,6 +138,20 @@ fn get_content(route: Route, headers: &Headers) -> String {
                 }
             }
             "HTTP/1.1 404 NOT FOUND\r\n\r\nNOT FOUND".to_string()
+        }
+        Route::SAVEFILE => {
+            if let Some(directory) = args.get("directory") {
+                let filename = headers.path.to_string().replace("/files/", "");
+                let file_path = format!("{}/{}", directory, filename);
+                let body = &headers.body;
+                if let Ok(_) = save_file((&file_path).to_owned(), body.to_owned()) {
+                    return format!(
+                "HTTP/1.1 201 CREATED\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{}",
+                file_path.len(), file_path
+            );
+                }
+            }
+            "HTTP/1.1 400 BAD REQUEST\r\n\r\nan error occurred".to_string()
         }
         Route::NOTFOUND => "HTTP/1.1 404 NOT FOUND\r\n\r\nNOT FOUND".to_string(),
     }
@@ -133,15 +174,17 @@ fn read_file_content(filename: String, directory: String) -> Result<String, ()> 
     }
 }
 
-fn parse_headers(buffer: [u8; 1024]) -> Headers {
-    let buf_to_string = String::from_utf8_lossy(&buffer);
+fn parse_headers(buf_to_string: String) -> Headers {
     let str_vec: Vec<&str> = buf_to_string.split("\r\n").collect();
     let mut start_line = str_vec.first().unwrap().split_whitespace();
-    let path = start_line.nth(1).unwrap().to_string();
     let method = start_line.nth(0).unwrap().to_string();
+    let path = start_line.nth(0).unwrap().to_string();
+    let body_start = buf_to_string.find("\r\n\r\n").unwrap_or(0);
+    let body = buf_to_string[body_start..].trim().to_string();
     let mut headers = Headers::new();
     headers.set_path(path);
     headers.set_method(method);
+    headers.set_body(body);
 
     let user_agent = str_vec.iter().find(|e| e.starts_with("User-Agent:"));
     if let Some(agent) = user_agent {
